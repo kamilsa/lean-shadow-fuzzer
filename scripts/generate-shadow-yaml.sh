@@ -202,6 +202,24 @@ if printf '%s\n' "${node_names[@]}" | grep -q '^lantern_' && [ -f "$RUN_METADATA
     fi
 fi
 
+# ethlambda under Shadow runs a shadow-integration build with fake XMSS enabled
+# (deterministic stub proofs + rate-based sim-cost sleeps); mirrors lantern/qlean.
+if printf '%s\n' "${node_names[@]}" | grep -q '^ethlambda_' && [ -f "$RUN_METADATA_JSON" ]; then
+    sig_rate=$(yq eval '.simulation.signatures_aggregation_rate // ""' "$RUN_METADATA_JSON")
+    rec_rate=$(yq eval '.simulation.recursive_aggregation_rate // ""' "$RUN_METADATA_JSON")
+
+    export ETHLAMBDA_SHADOW_XMSS_FAKE="true"
+
+    if [ -n "$sig_rate" ] && [ "$sig_rate" != "null" ]; then
+        export ETHLAMBDA_SHADOW_XMSS_AGGREGATE_RATE="$sig_rate"
+        export ETHLAMBDA_SHADOW_XMSS_VERIFY_RATE="$sig_rate"
+    fi
+
+    if [ -n "$rec_rate" ] && [ "$rec_rate" != "null" ]; then
+        export ETHLAMBDA_SHADOW_XMSS_MERGE_RATE="$rec_rate"
+    fi
+fi
+
 cat > "$OUTPUT_FILE" << EOF
 # Auto-generated Shadow network simulator configuration
 # Generated from: $VALIDATOR_CONFIG
