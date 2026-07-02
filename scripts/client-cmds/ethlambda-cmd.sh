@@ -31,6 +31,23 @@ if [ -n "${checkpoint_sync_url:-}" ]; then
     checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
 fi
 
+# Shadow sim-cost + fake-XMSS flags (only understood by a shadow-integration
+# build, i.e. ghcr.io/lambdaclass/ethlambda:*-shadow). generate-shadow-yaml.sh
+# exports these ETHLAMBDA_SHADOW_XMSS_* vars for ethlambda_* nodes.
+shadow_cost_flags=""
+if [ "${ETHLAMBDA_SHADOW_XMSS_FAKE:-}" == "true" ]; then
+    shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-fake"
+fi
+if [ -n "${ETHLAMBDA_SHADOW_XMSS_AGGREGATE_RATE:-}" ]; then
+    shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-aggregate-signatures-rate ${ETHLAMBDA_SHADOW_XMSS_AGGREGATE_RATE}"
+fi
+if [ -n "${ETHLAMBDA_SHADOW_XMSS_VERIFY_RATE:-}" ]; then
+    shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-verify-aggregated-signatures-rate ${ETHLAMBDA_SHADOW_XMSS_VERIFY_RATE}"
+fi
+if [ -n "${ETHLAMBDA_SHADOW_XMSS_MERGE_RATE:-}" ]; then
+    shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-merge-rate ${ETHLAMBDA_SHADOW_XMSS_MERGE_RATE}"
+fi
+
 # Command when running as binary
 node_binary="$binary_path \
       --genesis $configDir/config.yaml \
@@ -48,7 +65,8 @@ node_binary="$binary_path \
       $attestation_committee_flag \
       $aggregator_flag \
       $aggregate_subnet_ids_flag \
-      $checkpoint_sync_flag"
+      $checkpoint_sync_flag \
+      $shadow_cost_flags"
 
 # Command when running as docker container
 node_docker="ghcr.io/lambdaclass/ethlambda:devnet4 \
@@ -67,6 +85,9 @@ node_docker="ghcr.io/lambdaclass/ethlambda:devnet4 \
       $attestation_committee_flag \
       $aggregator_flag \
       $aggregate_subnet_ids_flag \
-      $checkpoint_sync_flag"
+      $checkpoint_sync_flag \
+      $shadow_cost_flags"
 
-node_setup="docker"
+# docker-arm runner forces binary mode (Shadow launches native processes, not
+# containers); the composite image supplies the shadow-integration binary.
+node_setup="binary"
