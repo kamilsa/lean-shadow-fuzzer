@@ -202,6 +202,18 @@ if printf '%s\n' "${node_names[@]}" | grep -q '^lantern_' && [ -f "$RUN_METADATA
     fi
 fi
 
+if printf '%s\n' "${node_names[@]}" | grep -q '^gean_' && [ -f "$RUN_METADATA_JSON" ]; then
+    sig_rate=$(yq eval '.simulation.signatures_aggregation_rate // ""' "$RUN_METADATA_JSON")
+
+    # gean models aggregation and both verify paths off the same sig/s rate; it
+    # has no separate recursive-merge step, so recursive_aggregation_rate is unused.
+    if [ -n "$sig_rate" ] && [ "$sig_rate" != "null" ]; then
+        export GEAN_SHADOW_XMSS_AGGREGATE_RATE="$sig_rate"
+        export GEAN_SHADOW_XMSS_VERIFY_AGGREGATED_RATE="$sig_rate"
+        export GEAN_SHADOW_XMSS_VERIFY_RATE="$sig_rate"
+    fi
+fi
+
 cat > "$OUTPUT_FILE" << EOF
 # Auto-generated Shadow network simulator configuration
 # Generated from: $VALIDATOR_CONFIG

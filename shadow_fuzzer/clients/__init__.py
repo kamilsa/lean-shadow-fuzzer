@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from .base import ClientParser
 from .ethlambda import EthlambdaParser
+from .gean import GeanParser
 from .lantern import LanternParser
 from .qlean import QleanParser
 from .zeam import ZeamParser
 
 _PARSERS: list[ClientParser] = [
     EthlambdaParser(),
+    GeanParser(),
     QleanParser(),
     LanternParser(),
     ZeamParser(),

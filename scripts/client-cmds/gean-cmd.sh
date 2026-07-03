@@ -30,6 +30,21 @@ if [ -n "${checkpoint_sync_url:-}" ]; then
     checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
 fi
 
+# Shadow simulator: model XMSS prover cost as virtual-time sleeps (sig/s rates).
+# generate-shadow-yaml.sh exports GEAN_SHADOW_XMSS_* from the run's aggregation
+# rates; unset means no delay (real deployments are unaffected). gean has no
+# separate recursive-merge step, so recursive_aggregation_rate has no gean knob.
+shadow_cost_flags=""
+if [ -n "${GEAN_SHADOW_XMSS_AGGREGATE_RATE:-}" ]; then
+    shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-aggregate-signatures-rate ${GEAN_SHADOW_XMSS_AGGREGATE_RATE}"
+fi
+if [ -n "${GEAN_SHADOW_XMSS_VERIFY_AGGREGATED_RATE:-}" ]; then
+    shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-verify-aggregated-signatures-rate ${GEAN_SHADOW_XMSS_VERIFY_AGGREGATED_RATE}"
+fi
+if [ -n "${GEAN_SHADOW_XMSS_VERIFY_RATE:-}" ]; then
+    shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-verify-signature-rate ${GEAN_SHADOW_XMSS_VERIFY_RATE}"
+fi
+
 # Command when running as binary
 node_binary="$binary_path \
       --custom-network-config-dir $configDir \
@@ -42,10 +57,11 @@ node_binary="$binary_path \
       $attestation_committee_flag \
       $aggregator_flag \
       $aggregate_subnet_ids_flag \
-      $checkpoint_sync_flag"
+      $checkpoint_sync_flag \
+      $shadow_cost_flags"
 
 # Command when running as docker container
-node_docker="ghcr.io/geanlabs/gean:devnet4 \
+node_docker="ghcr.io/geanlabs/gean:devnet5 \
       --custom-network-config-dir /config \
       --gossipsub-port $quicPort \
       --node-id $item \
@@ -56,6 +72,7 @@ node_docker="ghcr.io/geanlabs/gean:devnet4 \
       $attestation_committee_flag \
       $aggregator_flag \
       $aggregate_subnet_ids_flag \
-      $checkpoint_sync_flag"
+      $checkpoint_sync_flag \
+      $shadow_cost_flags"
 
-node_setup="docker"
+node_setup="binary"
