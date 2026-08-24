@@ -136,6 +136,7 @@ def generate_gml(
         lines.append(f"    packet_loss {LINK_PACKET_LOSS}")
         lines.append("  ]")
 
+    # Shadow edge latency is one-way; the region matrix stores RTTs.
     for i in range(node_count):
         name_i = f"node_{i}"
         region_i = region_assignments[name_i]
@@ -143,7 +144,7 @@ def generate_gml(
             name_j = f"node_{j}"
             region_j = region_assignments[name_j]
 
-            base_ms = latency_ms[region_i].get(region_j, 200)
+            base_ms = latency_ms[region_i].get(region_j, 200) * 0.5
             jitter = base_ms * jitter_ratio * (rng.random() * 2 - 1)
             latency = max(0.5, base_ms + jitter)
 
