@@ -243,6 +243,16 @@ def _build_docker_arm_image(
     )
 
 
+def _node_ip(index: int) -> str:
+    """Map a 0-based host index to a distinct 100.0.x.y address.
+
+    A flat 100.0.0.N scheme runs out at 254 nodes, so walk /24 blocks and skip
+    the .0 and .255 host numbers within each one.
+    """
+    block, host = divmod(index, 254)
+    return f"100.0.{block + 1}.{host + 1}"
+
+
 def _generate_privkey(rng: random.Random) -> str:
     return secrets.token_hex(32)
 
@@ -253,6 +263,7 @@ def _write_validator_config(
     total_subnets: int,
     aggregators_per_subnet: int,
     rng: random.Random,
+    active_epoch: int = 18,
 ) -> None:
     genesis_dir = run_dir / "genesis"
     genesis_dir.mkdir(parents=True, exist_ok=True)
@@ -270,7 +281,7 @@ def _write_validator_config(
                 "name": name,
                 "privkey": _generate_privkey(rng),
                 "enrFields": {
-                    "ip": f"100.0.0.{host_index + 1}",
+                    "ip": _node_ip(host_index),
                     "quic": 9001 + host_index,
                 },
                 "metricsPort": 8081 + host_index,
@@ -297,7 +308,7 @@ def _write_validator_config(
         "shuffle": "roundrobin",
         "deployment_mode": "local",
         "config": {
-            "activeEpoch": 18,
+            "activeEpoch": active_epoch,
             "keyType": "hash-sig",
             "attestation_committee_count": total_subnets,
         },
@@ -339,6 +350,12 @@ def _resolve_config(template: dict[str, Any], run_index: int) -> dict[str, Any]:
             simulation_raw.get("recursive_aggregation_rate", 0.0), rng
         )
     )
+    # Wire size of every fake stub proof (--shadow-xmss-fake-proof-size).
+    # Default mirrors the client's compiled-in 32 KiB; the ByteList512KiB SSZ
+    # cap bounds it at 524288.
+    fake_proof_size = int(
+        _resolve_value(simulation_raw.get("fake_proof_size_bytes", 32768), rng)
+    )
 
     client_weights = _resolve_weight_table(clients_raw, rng)
     client_list, node_counts = _sample_clients(client_weights, total_nodes, rng)
@@ -352,6 +369,9 @@ def _resolve_config(template: dict[str, Any], run_index: int) -> dict[str, Any]:
     jitter_ratio = float(
         _resolve_value(network_raw.get("latency_jitter_ratio", 0.3), rng)
     )
+    packet_loss = float(_resolve_value(network_raw.get("packet_loss", 0.0), rng))
+    # Multiplier on the region latency matrix (1.0 = the hardcoded geography).
+    latency_scale = float(_resolve_value(network_raw.get("latency_scale", 1.0), rng))
 
     fuzzer_section: dict[str, Any] = {
         "run_index": run_index,
@@ -372,11 +392,23 @@ def _resolve_config(template: dict[str, Any], run_index: int) -> dict[str, Any]:
         "aggregators_per_subnet": aggregators_per_subnet,
         "signatures_aggregation_rate": sig_agg_rate,
         "recursive_aggregation_rate": rec_agg_rate,
+        "fake_proof_size_bytes": fake_proof_size,
+    }
+
+    # Recorded per run so sweep analysis can correlate outcomes against the
+    # sampled network conditions. Region/bandwidth *assignments* land in the run
+    # dir as regions.json / bandwidths.json; these are the sampled weights.
+    network_section: dict[str, Any] = {
+        "latency_jitter_ratio": jitter_ratio,
+        "packet_loss": packet_loss,
+        "regions": {k: round(v, 4) for k, v in region_weights.items()},
+        "bandwidths": {k: round(v, 4) for k, v in bandwidth_weights.items()},
     }
 
     resolved: dict[str, Any] = {
         "fuzzer": fuzzer_section,
         "simulation": simulation_section,
+        "network": network_section,
         "clients": {k: round(v, 4) for k, v in client_weights.items()},
         "node_counts": node_counts,
     }
@@ -386,6 +418,8 @@ def _resolve_config(template: dict[str, Any], run_index: int) -> dict[str, Any]:
         "region_weights": region_weights,
         "bandwidth_weights": bandwidth_weights,
         "jitter_ratio": jitter_ratio,
+        "packet_loss": packet_loss,
+        "latency_scale": latency_scale,
         "rng_state": rng,
     }
 
@@ -503,7 +537,7 @@ def _run_genesis(
             str(SHADOW_GENESIS_TIME),
         ],
         check=True,
-        env=os.environ | {"DOCKER_USE_SUDO": "false"},
+        env=os.environ | {"DOCKER_USE_SUDO": os.environ.get("DOCKER_USE_SUDO", "false")},
     )
     _store_hash_sig_key_cache(genesis_dir, cache_dir)
 
@@ -531,6 +565,10 @@ def _run_topology(run_dir: Path, resolved: dict[str, Any]) -> None:
         json.dumps(region_weights),
         "--bandwidth-weights",
         json.dumps(bandwidth_weights),
+        "--packet-loss",
+        str(internal["packet_loss"]),
+        "--latency-scale",
+        str(internal["latency_scale"]),
     ]
     subprocess.run(cmd, check=True)
 
@@ -989,6 +1027,7 @@ def main() -> None:
             "run_index": run_index,
             "fuzzer": resolved["fuzzer"],
             "simulation": resolved["simulation"],
+            "network": resolved.get("network", {}),
             "clients": resolved.get("clients", {}),
             "node_counts": resolved.get("node_counts", {}),
         }
@@ -1004,6 +1043,11 @@ def main() -> None:
                 resolved["simulation"]["total_subnets"],
                 resolved["simulation"]["aggregators_per_subnet"],
                 internal["rng_state"],
+                # Number of epochs of the key's 2^32 lifetime to materialise.
+                # Drives hash-sig keygen time and secret-key size; the public key
+                # (52 B) and signature (2536 B) are fixed by the compile-time
+                # scheme, so lowering it does not change anything on the wire.
+                int(fuzzer.get("active_epoch", 18)),
             )
 
             print("  Writing run metadata...")
