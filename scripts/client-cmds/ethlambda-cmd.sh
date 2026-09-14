@@ -31,6 +31,36 @@ if [ -n "${checkpoint_sync_url:-}" ]; then
     checkpoint_sync_flag="--checkpoint-sync-url $checkpoint_sync_url"
 fi
 
+# Shadow sim-cost / fake-XMSS flags. Only meaningful for a binary built with
+# `--no-default-features --features shadow-integration` (see ethlambda's
+# shadow/README.md). The rates alone are inert: ethlambda only injects sim-cost
+# sleeps inside the fake-XMSS branch, so --shadow-xmss-fake gates all of them.
+shadow_cost_flags=""
+if [ "${ETHLAMBDA_SHADOW_XMSS_FAKE:-}" == "true" ]; then
+    shadow_cost_flags="--shadow-xmss-fake"
+
+    if [ -n "${ETHLAMBDA_SHADOW_XMSS_AGGREGATE_RATE:-}" ]; then
+        shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-aggregate-signatures-rate ${ETHLAMBDA_SHADOW_XMSS_AGGREGATE_RATE}"
+    fi
+    if [ -n "${ETHLAMBDA_SHADOW_XMSS_VERIFY_RATE:-}" ]; then
+        shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-verify-aggregated-signatures-rate ${ETHLAMBDA_SHADOW_XMSS_VERIFY_RATE}"
+    fi
+    if [ -n "${ETHLAMBDA_SHADOW_XMSS_MERGE_RATE:-}" ]; then
+        shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-merge-rate ${ETHLAMBDA_SHADOW_XMSS_MERGE_RATE}"
+    fi
+    if [ -n "${ETHLAMBDA_SHADOW_XMSS_FAKE_PROOF_SIZE:-}" ]; then
+        shadow_cost_flags="${shadow_cost_flags} --shadow-xmss-fake-proof-size ${ETHLAMBDA_SHADOW_XMSS_FAKE_PROOF_SIZE}"
+    fi
+fi
+
+# Run with the sync-gate's duty suppression off. Used to test whether the gate is
+# what turns an aggregation-induced lag into a permanent stall, or whether the
+# chain limps through without it.
+sync_gate_flag=""
+if [ "${ETHLAMBDA_DISABLE_DUTY_SYNC_GATE:-}" == "true" ]; then
+    sync_gate_flag="--disable-duty-sync-gate"
+fi
+
 # Command when running as binary
 node_binary="$binary_path \
       --genesis $configDir/config.yaml \
@@ -48,7 +78,9 @@ node_binary="$binary_path \
       $attestation_committee_flag \
       $aggregator_flag \
       $aggregate_subnet_ids_flag \
-      $checkpoint_sync_flag"
+      $checkpoint_sync_flag \
+      $sync_gate_flag \
+      $shadow_cost_flags"
 
 # Command when running as docker container
 node_docker="ghcr.io/lambdaclass/ethlambda:devnet4 \

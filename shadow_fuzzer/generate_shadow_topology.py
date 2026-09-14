@@ -84,6 +84,7 @@ def generate_gml(
     latency_ms: dict[str, dict[str, int]],
     jitter_ratio: float,
     rng: random.Random,
+    packet_loss: float = LINK_PACKET_LOSS,
 ) -> str:
     lines: list[str] = ["graph [", "  directed 0"]
 
@@ -112,14 +113,14 @@ def generate_gml(
         lines.append(f"    source {i}")
         lines.append(f"    target {i}")
         lines.append('    latency "1 ms"')
-        lines.append(f"    packet_loss {LINK_PACKET_LOSS}")
+        lines.append(f"    packet_loss {packet_loss}")
         lines.append("  ]")
 
     lines.append("  edge [")
     lines.append(f"    source {switch_id}")
     lines.append(f"    target {switch_id}")
     lines.append('    latency "1 ms"')
-    lines.append(f"    packet_loss {LINK_PACKET_LOSS}")
+    lines.append(f"    packet_loss {packet_loss}")
     lines.append("  ]")
 
     for i in range(node_count):
@@ -133,7 +134,7 @@ def generate_gml(
         lines.append(f"    source {i}")
         lines.append(f"    target {switch_id}")
         lines.append(f'    latency "{max(1, round(latency))} ms"')
-        lines.append(f"    packet_loss {LINK_PACKET_LOSS}")
+        lines.append(f"    packet_loss {packet_loss}")
         lines.append("  ]")
 
     # Shadow edge latency is one-way; the region matrix stores RTTs.
@@ -152,7 +153,7 @@ def generate_gml(
             lines.append(f"    source {i}")
             lines.append(f"    target {j}")
             lines.append(f'    latency "{max(1, round(latency))} ms"')
-            lines.append(f"    packet_loss {LINK_PACKET_LOSS}")
+            lines.append(f"    packet_loss {packet_loss}")
             lines.append("  ]")
 
     lines.append("]")
@@ -190,7 +191,22 @@ def main() -> None:
         default=None,
         help="JSON dict of region-to-region latency matrix",
     )
+    parser.add_argument(
+        "--packet-loss",
+        type=float,
+        default=DEFAULT_PACKET_LOSS,
+        help="Packet loss fraction applied to every GML edge (0.0 - 1.0)",
+    )
+    parser.add_argument(
+        "--latency-scale",
+        type=float,
+        default=1.0,
+        help="Multiply every region-to-region latency by this factor (floor 1 ms)",
+    )
     args = parser.parse_args()
+
+    if not 0.0 <= args.packet_loss <= 1.0:
+        parser.error(f"--packet-loss must be in [0.0, 1.0], got {args.packet_loss}")
 
     rng = random.Random(args.seed)
     out = Path(args.output_dir)
@@ -214,10 +230,26 @@ def main() -> None:
     else:
         latency_ms = dict(REGIONS_LATENCY_MS)
 
+    if args.latency_scale != 1.0:
+        if args.latency_scale <= 0:
+            parser.error(f"--latency-scale must be > 0, got {args.latency_scale}")
+        latency_ms = {
+            a: {b: max(1, round(v * args.latency_scale)) for b, v in row.items()}
+            for a, row in latency_ms.items()
+        }
+
     regions = assign_regions(args.node_count, region_weights, rng)
     bandwidths = assign_bandwidths(args.node_count, bandwidth_weights, rng)
 
-    gml = generate_gml(args.node_count, regions, bandwidths, latency_ms, args.jitter, rng)
+    gml = generate_gml(
+        args.node_count,
+        regions,
+        bandwidths,
+        latency_ms,
+        args.jitter,
+        rng,
+        args.packet_loss,
+    )
     gml_path = out / "topology.gml"
     gml_path.write_text(gml)
     print(f"Wrote {gml_path} ({args.node_count} nodes, {gml_path.stat().st_size} bytes)")

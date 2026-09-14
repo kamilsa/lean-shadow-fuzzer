@@ -202,6 +202,31 @@ if printf '%s\n' "${node_names[@]}" | grep -q '^lantern_' && [ -f "$RUN_METADATA
     fi
 fi
 
+# ethlambda reads the same sampled rates, but its sim-cost sleeps are gated
+# behind --shadow-xmss-fake, so the fake backend is enabled by default here.
+# Set ETHLAMBDA_SHADOW_XMSS_FAKE=false to run real XMSS instead (only viable at
+# a handful of nodes: real leanVM aggregation is far too slow for a sweep).
+if printf '%s\n' "${node_names[@]}" | grep -q '^ethlambda_' && [ -f "$RUN_METADATA_JSON" ]; then
+    export ETHLAMBDA_SHADOW_XMSS_FAKE="${ETHLAMBDA_SHADOW_XMSS_FAKE:-true}"
+
+    el_sig_rate=$(yq eval '.simulation.signatures_aggregation_rate // ""' "$RUN_METADATA_JSON")
+    el_rec_rate=$(yq eval '.simulation.recursive_aggregation_rate // ""' "$RUN_METADATA_JSON")
+
+    if [ -n "$el_sig_rate" ] && [ "$el_sig_rate" != "null" ]; then
+        export ETHLAMBDA_SHADOW_XMSS_AGGREGATE_RATE="$el_sig_rate"
+        export ETHLAMBDA_SHADOW_XMSS_VERIFY_RATE="$el_sig_rate"
+    fi
+
+    if [ -n "$el_rec_rate" ] && [ "$el_rec_rate" != "null" ]; then
+        export ETHLAMBDA_SHADOW_XMSS_MERGE_RATE="$el_rec_rate"
+    fi
+
+    el_proof_size=$(yq eval '.simulation.fake_proof_size_bytes // ""' "$RUN_METADATA_JSON")
+    if [ -n "$el_proof_size" ] && [ "$el_proof_size" != "null" ]; then
+        export ETHLAMBDA_SHADOW_XMSS_FAKE_PROOF_SIZE="$el_proof_size"
+    fi
+fi
+
 cat > "$OUTPUT_FILE" << EOF
 # Auto-generated Shadow network simulator configuration
 # Generated from: $VALIDATOR_CONFIG
