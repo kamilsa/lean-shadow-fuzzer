@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #-----------------------lantern setup----------------------
-LANTERN_IMAGE="${LANTERN_IMAGE:-piertwo/lantern:v0.0.5-shadow}"
+LANTERN_IMAGE="${LANTERN_IMAGE:-bitminemavan/lantern:v0.0.5-shadow}"
 lantern_binary="${LANTERN_BINARY:-lantern}"
 
 devnet_flag=""
